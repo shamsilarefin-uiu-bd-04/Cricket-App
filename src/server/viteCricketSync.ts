@@ -35,7 +35,7 @@ export function cricketSyncPlugin(): Plugin {
   }
 
   // Heartbeat to keep mobile connections alive
-  setInterval(() => {
+  const heartbeatTimer = setInterval(() => {
     for (const client of Array.from(sseClients)) {
       try {
         client.write(':keepalive\n\n');
@@ -44,6 +44,9 @@ export function cricketSyncPlugin(): Plugin {
       }
     }
   }, 20000);
+  if (heartbeatTimer.unref) {
+    heartbeatTimer.unref();
+  }
 
   function setupMiddleware(middlewares: any, defaultPort: number) {
     middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
@@ -220,6 +223,7 @@ export function cricketSyncPlugin(): Plugin {
 
   return {
     name: 'cricket-sync-server',
+    apply: 'serve',
     configureServer(server) {
       const port = (server.config.server.port as number) || 5173;
       setupMiddleware(server.middlewares, port);
