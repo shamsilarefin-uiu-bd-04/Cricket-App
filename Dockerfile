@@ -15,5 +15,5 @@ RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder /app/data ./data
-EXPOSE 5173
+EXPOSE 5173 10000
 CMD ["node", "server.js"]

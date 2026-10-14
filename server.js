@@ -297,3 +297,14 @@ server.listen(PORT, HOST, () => {
   console.log(`☁️ Cloud Ready for Render, Railway, Vercel, VPS & Tunnel`);
   console.log(`=======================================================`);
 });
+
+if (PORT !== 5173) {
+  try {
+    const secondaryServer = http.createServer(server.listeners('request')[0]);
+    secondaryServer.listen(5173, HOST, () => {
+      console.log(`🌐 Fallback port 5173 active for internal routing.`);
+    });
+  } catch (err) {
+    // ignore if unavailable
+  }
+}
