@@ -4,6 +4,7 @@ import { StorageService } from '../../utils/storage';
 import { FixturesGenerator } from '../../utils/fixturesGenerator';
 import { TeamLogo } from '../common/TeamLogo';
 import { ManualRulesModal } from '../tournament/ManualRulesModal';
+import { FriendlyMatchModal } from './FriendlyMatchModal';
 import {
   Calendar,
   Plus,
@@ -20,7 +21,8 @@ import {
   RotateCcw,
   LogOut,
   Lock,
-  Unlock
+  Unlock,
+  Users
 } from 'lucide-react';
 
 interface FixturesViewProps {
@@ -43,9 +45,10 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
   dataVersion
 }) => {
   const [filter, setFilter] = useState<
-    'all' | 'League' | 'Semi-Final' | 'Final' | 'scheduled' | 'live' | 'completed'
+    'all' | 'League' | 'Semi-Final' | 'Final' | 'Friendly' | 'scheduled' | 'live' | 'completed'
   >('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFriendlyModalOpen, setIsFriendlyModalOpen] = useState(false);
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [isRulesModalOpen, setIsRulesModalOpen] = useState(false);
 
@@ -66,9 +69,21 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
   );
   const [venue, setVenue] = useState('Sky Arena Roof Court A');
   const [stage, setStage] = useState<'League' | 'Semi-Final' | 'Final' | 'Friendly'>('League');
+  const [overs, setOvers] = useState<number>(10);
 
   const filteredMatches = matches.filter((m) => {
-    if (selectedTourneyId !== 'all' && m.tournamentId !== selectedTourneyId) return false;
+    const isFriendly = m.stage === 'Friendly' || m.tournamentId === 'friendly';
+
+    if (filter === 'Friendly') {
+      return isFriendly;
+    }
+
+    if (selectedTourneyId === 'friendly') {
+      if (!isFriendly) return false;
+    } else if (selectedTourneyId !== 'all') {
+      if (m.tournamentId !== selectedTourneyId) return false;
+    }
+
     if (filter === 'all') return true;
     if (filter === 'League') return m.stage === 'League';
     if (filter === 'Semi-Final') return m.stage === 'Semi-Final';
@@ -96,6 +111,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
     setScheduledTime(new Date().toISOString().replace('T', ' ').slice(0, 16));
     setVenue('Sky Arena Roof Court A');
     setStage('League');
+    setOvers(tournament.oversPerInnings || 10);
     setIsModalOpen(true);
   };
 
@@ -110,6 +126,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
     setScheduledTime(match.scheduledTime);
     setVenue(match.venue);
     setStage(match.stage);
+    setOvers(match.overs || tournament.oversPerInnings || 10);
     setIsModalOpen(true);
   };
 
@@ -131,22 +148,26 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
         team2Id,
         scheduledTime,
         venue,
-        stage
+        stage,
+        overs: Number(overs) || 10,
+        tournamentId: stage === 'Friendly' ? 'friendly' : (editingMatch.tournamentId || tournament.id),
+        notes: stage === 'Friendly' ? `Friendly Match (${overs} Overs)` : editingMatch.notes
       };
       StorageService.saveMatch(updated);
     } else {
+      const nextNum = matches.length > 0 ? Math.max(...matches.map((m) => m.matchNumber || 0)) + 1 : 1;
       const newMatch: Match = {
-        id: `match_${Date.now()}`,
-        tournamentId: tournament.id,
-        matchNumber: matches.length + 1,
+        id: stage === 'Friendly' ? `friendly_${Date.now()}` : `match_${Date.now()}`,
+        tournamentId: stage === 'Friendly' ? 'friendly' : tournament.id,
+        matchNumber: nextNum,
         stage,
         team1Id,
         team2Id,
         venue,
         scheduledTime,
         status: 'scheduled',
-        overs: tournament.oversPerInnings || 10,
-        notes: `${stage} Match`
+        overs: Number(overs) || 10,
+        notes: stage === 'Friendly' ? `Friendly Match (${overs} Overs)` : `${stage} Match (${overs} Overs)`
       };
       StorageService.saveMatch(newMatch);
     }
@@ -161,8 +182,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
       return;
     }
     if (window.confirm('Are you sure you want to delete this fixture?')) {
-      const updated = matches.filter((m) => m.id !== matchId);
-      StorageService.saveMatches(updated);
+      StorageService.deleteMatch(matchId);
       onRefreshData();
     }
   };
@@ -332,14 +352,30 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
               onChange={(e) => setSelectedTourneyId(e.target.value)}
               className="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs text-amber-300 font-bold focus:outline-none focus:border-amber-500"
             >
-              <option value="all">All Tournaments</option>
+              <option value="all">All Tournaments & Matches</option>
               {tournaments.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.name} ({t.edition}) {t.id === activeTournament.id ? '★ Active' : ''}
                 </option>
               ))}
+              <option value="friendly">🤝 Friendly Matches (Standalone)</option>
             </select>
           </div>
+
+          <button
+            onClick={() => {
+              if (!isAdmin) {
+                onRequireAdmin?.('create friendly match');
+                return;
+              }
+              setIsFriendlyModalOpen(true);
+            }}
+            title="Create and start a standalone friendly match between 2 teams without tournament"
+            className="py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-cyan-600 to-teal-600 hover:from-cyan-500 hover:to-teal-500 text-white font-bold text-xs shadow-lg shadow-cyan-600/30 flex items-center space-x-1.5 transition-all cursor-pointer active:scale-95"
+          >
+            <Users className="w-4 h-4 text-cyan-200" />
+            <span>🤝 Friendly Match</span>
+          </button>
 
           <button
             onClick={() => setIsRulesModalOpen(true)}
@@ -401,11 +437,12 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
         {[
           {
             id: 'all',
-            label: `All (${matches.filter((m) => selectedTourneyId === 'all' || m.tournamentId === selectedTourneyId).length})`
+            label: `All (${matches.filter((m) => selectedTourneyId === 'all' || (selectedTourneyId === 'friendly' ? (m.stage === 'Friendly' || m.tournamentId === 'friendly') : m.tournamentId === selectedTourneyId)).length})`
           },
           { id: 'League', label: 'Round Robin' },
           { id: 'Semi-Final', label: 'Semi-Finals ⚡' },
           { id: 'Final', label: 'Grand Final 🏆' },
+          { id: 'Friendly', label: 'Friendly Matches 🤝' },
           { id: 'live', label: 'Live' },
           { id: 'completed', label: 'Completed' }
         ].map((tab) => (
@@ -441,6 +478,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
             const isCompleted = m.status === 'completed';
             const isFinal = m.stage === 'Final';
             const isSemi = m.stage === 'Semi-Final';
+            const isFriendly = m.stage === 'Friendly' || m.tournamentId === 'friendly';
 
             return (
               <div
@@ -450,6 +488,8 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
                     ? 'bg-gradient-to-b from-amber-950/20 via-slate-900 to-slate-900 border-amber-500/50 shadow-amber-500/10'
                     : isSemi
                     ? 'bg-gradient-to-b from-purple-950/20 via-slate-900 to-slate-900 border-purple-500/40 shadow-purple-500/10'
+                    : isFriendly
+                    ? 'bg-gradient-to-b from-cyan-950/20 via-slate-900 to-slate-900 border-cyan-500/40 shadow-cyan-500/10'
                     : 'bg-slate-900 border-slate-800 hover:border-slate-700'
                 }`}
               >
@@ -468,6 +508,11 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
                         <span className="text-purple-300 font-bold bg-purple-500/20 px-2 py-0.5 rounded-full border border-purple-500/40 flex items-center space-x-1">
                           <Zap className="w-3 h-3 text-purple-300" />
                           <span>SEMI-FINAL</span>
+                        </span>
+                      ) : isFriendly ? (
+                        <span className="text-cyan-300 font-bold bg-cyan-500/20 px-2 py-0.5 rounded-full border border-cyan-500/40 flex items-center space-x-1">
+                          <Users className="w-3 h-3 text-cyan-300" />
+                          <span>FRIENDLY MATCH</span>
                         </span>
                       ) : (
                         <span className="text-emerald-400 font-semibold">{m.stage || 'Round Robin'}</span>
@@ -666,6 +711,36 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                  Overs per Innings
+                </label>
+                <div className="flex items-center space-x-2">
+                  {[5, 6, 8, 10, 12, 15, 20].map((ov) => (
+                    <button
+                      key={ov}
+                      type="button"
+                      onClick={() => setOvers(ov)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        overs === ov
+                          ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {ov}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={overs}
+                    onChange={(e) => setOvers(Math.max(1, parseInt(e.target.value) || 10))}
+                    className="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
                   Venue / Rooftop Court
                 </label>
                 <input
@@ -709,6 +784,18 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Standalone 2-Team Friendly Match Modal */}
+      {isFriendlyModalOpen && (
+        <FriendlyMatchModal
+          isOpen={isFriendlyModalOpen}
+          onClose={() => setIsFriendlyModalOpen(false)}
+          onStartScoring={onStartScoring}
+          onRefreshData={onRefreshData}
+          isAdmin={isAdmin}
+          onRequireAdmin={onRequireAdmin}
+        />
       )}
 
       {/* Manual Round Robin & Qualify Rules Modal */}

@@ -21,7 +21,9 @@ const STORAGE_KEYS = {
   PLAYERS: 'rooftop_cricket_players',
   MATCHES: 'rooftop_cricket_matches',
   ACTIVE_MATCH_ID: 'rooftop_cricket_active_match_id',
-  ADMIN_AUTH: 'rooftop_cricket_admin_auth'
+  ADMIN_AUTH: 'rooftop_cricket_admin_auth',
+  LAST_UPDATED: 'rooftop_cricket_last_updated',
+  INITIALIZED: 'rooftop_cricket_initialized'
 };
 
 const memoryStore: Record<string, string> = {};
@@ -302,7 +304,18 @@ export const StorageService = {
     onStateChangeCallback = cb;
   },
 
+  getLastUpdated(): number {
+    const raw = safeStorage.getItem(STORAGE_KEYS.LAST_UPDATED);
+    return raw ? Number(raw) || 0 : 0;
+  },
+
+  setLastUpdated(timestamp?: number): void {
+    const ts = timestamp || Date.now();
+    safeStorage.setItem(STORAGE_KEYS.LAST_UPDATED, ts.toString());
+  },
+
   notifyChange(broadcast = true): void {
+    this.setLastUpdated();
     if (broadcast && onStateChangeCallback) {
       try {
         onStateChangeCallback();
@@ -957,23 +970,93 @@ export const StorageService = {
 
   getMatches(): Match[] {
     const raw = safeStorage.getItem(STORAGE_KEYS.MATCHES);
-    if (!raw) {
+    if (raw === null) {
+      const isInit = safeStorage.getItem(STORAGE_KEYS.INITIALIZED);
+      if (isInit) {
+        return [];
+      }
       safeStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(SEED_MATCHES));
+      safeStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
+      this.setLastUpdated();
       return SEED_MATCHES;
     }
     try {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         return parsed;
       }
     } catch {}
-    safeStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(SEED_MATCHES));
-    return SEED_MATCHES;
+    return [];
   },
 
   saveMatches(matches: Match[], broadcast = true): void {
     safeStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(matches));
+    safeStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
     this.notifyChange(broadcast);
+  },
+
+  deleteMatch(matchId: string, broadcast = true): void {
+    const matches = this.getMatches().filter((m) => m.id !== matchId);
+    this.saveMatches(matches, broadcast);
+    if (this.getActiveMatchId() === matchId) {
+      if (matches.length > 0) {
+        this.setActiveMatchId(matches[0].id, broadcast);
+      } else {
+        safeStorage.removeItem(STORAGE_KEYS.ACTIVE_MATCH_ID);
+        this.notifyChange(broadcast);
+      }
+    }
+  },
+
+  clearAllMatches(tournamentId?: string, broadcast = true): void {
+    if (tournamentId && tournamentId !== 'all') {
+      const remaining = this.getMatches().filter((m) => m.tournamentId !== tournamentId);
+      this.saveMatches(remaining, broadcast);
+      if (remaining.length > 0) {
+        this.setActiveMatchId(remaining[0].id, broadcast);
+      } else {
+        safeStorage.removeItem(STORAGE_KEYS.ACTIVE_MATCH_ID);
+        this.notifyChange(broadcast);
+      }
+    } else {
+      this.saveMatches([], broadcast);
+      safeStorage.removeItem(STORAGE_KEYS.ACTIVE_MATCH_ID);
+      this.notifyChange(broadcast);
+    }
+  },
+
+  createFriendlyMatch(options: {
+    team1Id: string;
+    team2Id: string;
+    overs?: number;
+    venue?: string;
+    scheduledTime?: string;
+    autoActivate?: boolean;
+    broadcast?: boolean;
+  }): Match {
+    const matches = this.getMatches();
+    const highestNum = matches.reduce((max, m) => Math.max(max, m.matchNumber || 0), 0);
+    const overs = options.overs && options.overs > 0 ? options.overs : 10;
+    const match: Match = {
+      id: `friendly_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      tournamentId: 'friendly',
+      matchNumber: highestNum + 1,
+      stage: 'Friendly',
+      team1Id: options.team1Id,
+      team2Id: options.team2Id,
+      venue: options.venue || 'Sky Arena Rooftop Court',
+      scheduledTime: options.scheduledTime || new Date().toISOString().replace('T', ' ').slice(0, 16),
+      status: 'scheduled',
+      overs,
+      notes: `Friendly Match (${overs} Overs)`
+    };
+
+    matches.push(match);
+    this.saveMatches(matches, options.broadcast ?? true);
+    if (options.autoActivate) {
+      this.setActiveMatchId(match.id, options.broadcast ?? true);
+    }
+    return match;
   },
 
   getMatchById(matchId: string): Match | undefined {
@@ -989,7 +1072,7 @@ export const StorageService = {
       matches.push(match);
     }
     this.saveMatches(matches);
-    if (match.tournamentId) {
+    if (match.tournamentId && match.tournamentId !== 'friendly') {
       this.advanceTournamentPlayoffs(match.tournamentId);
     }
   },
@@ -1419,6 +1502,7 @@ export const StorageService = {
     safeStorage.setItem(STORAGE_KEYS.TEAMS, JSON.stringify(SEED_TEAMS));
     safeStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(SEED_PLAYERS));
     safeStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(SEED_MATCHES));
+    safeStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
     safeStorage.removeItem(STORAGE_KEYS.ACTIVE_MATCH_ID);
     this.notifyChange(broadcast);
   },
@@ -1473,6 +1557,7 @@ export const StorageService = {
     safeStorage.setItem(STORAGE_KEYS.TEAMS, JSON.stringify(SEED_TEAMS));
     safeStorage.setItem(STORAGE_KEYS.PLAYERS, JSON.stringify(SEED_PLAYERS));
     safeStorage.setItem(STORAGE_KEYS.MATCHES, JSON.stringify(SEED_MATCHES));
+    safeStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
     safeStorage.setItem(STORAGE_KEYS.ACTIVE_MATCH_ID, SEED_MATCHES[0].id);
     this.notifyChange(broadcast);
   },

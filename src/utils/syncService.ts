@@ -75,7 +75,7 @@ export const SyncService = {
       if (res.ok) {
         const data = await res.json();
         this.hasServerConnection = true;
-        if (data && (data.version || data.matches?.length > 0)) {
+        if (data && (data.version || Array.isArray(data.matches))) {
           this.applyServerState(data);
         } else {
           // If server state is fresh/empty, seed it from this device
@@ -106,7 +106,7 @@ export const SyncService = {
           const payload = JSON.parse(event.data);
           if (payload.type === 'SYNC_UPDATE' && payload.data) {
             this.applyServerState(payload.data);
-          } else if (payload.type === 'INITIAL_STATE' && payload.data && (payload.data.version || payload.data.matches?.length > 0)) {
+          } else if (payload.type === 'INITIAL_STATE' && payload.data) {
             this.applyServerState(payload.data);
           } else if (payload.type === 'CLIENTS_COUNT') {
             this.connectedClients = payload.count || 1;
@@ -134,6 +134,16 @@ export const SyncService = {
     if (data.sourceClientId && data.sourceClientId === CLIENT_INSTANCE_ID) {
       return;
     }
+
+    const localUpdated = StorageService.getLastUpdated();
+    const serverTimestamp = data.timestamp || data.updatedAt || 0;
+
+    // Guard against stale server state overwriting fresher local state
+    if (serverTimestamp > 0 && localUpdated > 0 && serverTimestamp < localUpdated) {
+      this.pushToServer();
+      return;
+    }
+
     this.isSyncing = true;
     try {
       let changed = false;
@@ -154,7 +164,7 @@ export const SyncService = {
         StorageService.savePlayers(data.players, false);
         changed = true;
       }
-      if (Array.isArray(data.matches) && data.matches.length > 0) {
+      if (Array.isArray(data.matches)) {
         StorageService.saveMatches(data.matches, false);
         changed = true;
       }
@@ -163,8 +173,11 @@ export const SyncService = {
         changed = true;
       }
 
-      if (changed && typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('cricket-sync', { detail: data }));
+      if (changed) {
+        StorageService.setLastUpdated(serverTimestamp || Date.now());
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('cricket-sync', { detail: data }));
+        }
       }
     } finally {
       this.isSyncing = false;
@@ -185,7 +198,7 @@ export const SyncService = {
         players: StorageService.getPlayers(),
         matches: StorageService.getMatches(),
         activeMatchId: StorageService.getActiveMatchId(),
-        timestamp: Date.now()
+        timestamp: StorageService.getLastUpdated() || Date.now()
       };
 
       const res = await fetch('/api/sync', {

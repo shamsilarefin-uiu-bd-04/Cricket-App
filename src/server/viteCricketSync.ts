@@ -192,6 +192,7 @@ export function cricketSyncPlugin(): Plugin {
             serverState = {
               ...incoming,
               version,
+              timestamp: incoming.timestamp || Date.now(),
               updatedAt: Date.now()
             };
 

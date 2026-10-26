@@ -1368,7 +1368,50 @@ if (playoffMatchesList.length > 0) {
   assert(finalMatchCheck.team2Id === sfPlayoff.team1Id, 'Grand Final advanced SF winner ended by umpire');
 }
 
-console.log('\n🎉 ALL UPDATED RULES, DYNAMIC TOURNAMENT OVERS, BOWLER QUOTAS, BATSMAN AUTO-RETIREMENT, PLAYOFFS, SCORE TIMELINE, OFFICIAL TEAM LOGOS, CRICBUZZ SPECTATOR MODE, ADMIN AUTH & LOG OUT (0123admin), ADMIN EDIT PLAYER STATS, RESTART FIXTURES, AND UMPIRE END GAME (DRAW OR WIN) PASSED 100%!');
+// 23. Standalone Friendly Match (2 Teams Without Tournament)
+const friendlyMatch = StorageService.createFriendlyMatch({
+  team1Id: 't1',
+  team2Id: 't2',
+  overs: 8,
+  venue: 'Sky Rooftop East Ground',
+  autoActivate: true
+});
+assert(friendlyMatch.stage === 'Friendly', 'Friendly match created with stage "Friendly"');
+assert(friendlyMatch.overs === 8, 'Friendly match format has 8 overs');
+assert(friendlyMatch.tournamentId === 'friendly', 'Friendly match tournamentId is "friendly"');
+assert(StorageService.getActiveMatchId() === friendlyMatch.id, 'Friendly match auto-activated in LiveScorer');
+
+// Verify that friendly matches NEVER pollute tournament standings
+const tourneyStandingsBefore = StorageService.calculateStandings(top3Tourney.id);
+// Mark friendly match as completed with t1 win
+friendlyMatch.status = 'completed';
+friendlyMatch.winningTeamId = 't1';
+friendlyMatch.winMargin = 'Won by 15 runs';
+StorageService.saveMatch(friendlyMatch);
+
+const tourneyStandingsAfter = StorageService.calculateStandings(top3Tourney.id);
+assert(
+  JSON.stringify(tourneyStandingsBefore) === JSON.stringify(tourneyStandingsAfter),
+  'Tournament standings are completely untouched by standalone friendly matches'
+);
+
+// 24. Match Deletion and Persistence Without Re-Seeding Bugs
+const totalMatchesBefore = StorageService.getMatches().length;
+StorageService.deleteMatch(friendlyMatch.id);
+const totalMatchesAfter = StorageService.getMatches().length;
+assert(totalMatchesAfter === totalMatchesBefore - 1, 'Match successfully deleted without resurrection');
+
+// Verify deleting all matches keeps them at 0 without resurrecting SEED_MATCHES
+StorageService.clearAllMatches();
+assert(StorageService.getMatches().length === 0, 'All matches cleared to 0');
+assert(StorageService.getMatches().length === 0, 'Calling getMatches() repeatedly does NOT resurrect SEED_MATCHES');
+
+// Restore matches for other tests/defaults
+StorageService.resetToDefaults();
+assert(StorageService.getMatches().length > 0, 'Reset to defaults restored initial tournament matches');
+assert(StorageService.getLastUpdated() > 0, 'StorageService tracks modification timestamp for sync conflict resolution');
+
+console.log('\n🎉 ALL UPDATED RULES, DYNAMIC TOURNAMENT OVERS, BOWLER QUOTAS, BATSMAN AUTO-RETIREMENT, PLAYOFFS, SCORE TIMELINE, OFFICIAL TEAM LOGOS, CRICBUZZ SPECTATOR MODE, ADMIN AUTH & LOG OUT (0123admin), ADMIN EDIT PLAYER STATS, RESTART FIXTURES, AND UMPIRE END GAME (DRAW OR WIN), STANDALONE FRIENDLY MATCHES, AND FIXTURE REFRESH BUG FIXES PASSED 100%!');
 
 
 
