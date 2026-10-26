@@ -423,9 +423,10 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
 
         if (inn2Runs >= target) {
           winnerId = result.updatedInnings.teamId;
-          const maxSquadWickets = battingSquadPlayerIds.length;
+          const maxSquadWickets = Math.max(1, battingSquadPlayerIds.length - 1);
           const remainingWickets = maxSquadWickets - result.updatedInnings.wickets;
-          margin = `Won by ${Math.max(1, remainingWickets)} wickets`;
+          const displayWickets = Math.max(1, remainingWickets);
+          margin = `Won by ${displayWickets} ${displayWickets === 1 ? 'wicket' : 'wickets'}`;
         } else if (inn2Runs < inn1Runs) {
           winnerId = result.updatedInnings.bowlingTeamId;
           margin = `Won by ${inn1Runs - inn2Runs} runs`;

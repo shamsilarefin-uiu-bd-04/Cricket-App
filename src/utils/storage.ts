@@ -1486,11 +1486,13 @@ export const StorageService = {
 
       // Runs & overs for NRR
       const matchOvers = match.overs || 10;
-      const team1Squad = this.getTeamById(team1Id)?.playerIds.length || 4;
-      const team2Squad = this.getTeamById(team2Id)?.playerIds.length || 4;
+      const team1Squad = (match.team1PlayerIds?.length) || this.getTeamById(team1Id)?.playerIds.length || 4;
+      const team2Squad = (match.team2PlayerIds?.length) || this.getTeamById(team2Id)?.playerIds.length || 4;
+      const maxSquadWickets1 = Math.max(1, team1Squad - 1);
+      const maxSquadWickets2 = Math.max(1, team2Squad - 1);
 
       if (inn1) {
-        const inn1AllOut = inn1.wickets >= team1Squad;
+        const inn1AllOut = inn1.wickets >= maxSquadWickets1;
         const inn1OversFaced = inn1AllOut
           ? matchOvers
           : inn1.oversCompleted + inn1.ballsInCurrentOver / 6;
@@ -1501,7 +1503,7 @@ export const StorageService = {
       }
 
       if (inn2) {
-        const inn2AllOut = inn2.wickets >= team2Squad;
+        const inn2AllOut = inn2.wickets >= maxSquadWickets2;
         const inn2OversFaced = inn2AllOut
           ? matchOvers
           : inn2.oversCompleted + inn2.ballsInCurrentOver / 6;
