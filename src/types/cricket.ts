@@ -191,6 +191,9 @@ export interface Match {
   scheduledTime: string;
   status: MatchStatus;
   overs?: number; // Match overs override if any (defaults to tournament.oversPerInnings)
+  playersPerTeam?: number; // Playing squad size per team (e.g. 2 to 12 players)
+  team1PlayerIds?: string[]; // Specific playing squad for Team 1 in this match
+  team2PlayerIds?: string[]; // Specific playing squad for Team 2 in this match
   toss?: TossInfo;
   innings1?: Innings;
   innings2?: Innings;

@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StorageService } from '../../utils/storage';
-import { Team } from '../../types/cricket';
+import { Team, Player } from '../../types/cricket';
 import { TeamLogo } from '../common/TeamLogo';
-import { Users, Zap, Calendar, MapPin, Clock, X, PlusCircle, Check } from 'lucide-react';
+import {
+  Users,
+  Zap,
+  Calendar,
+  MapPin,
+  Clock,
+  X,
+  PlusCircle,
+  Check,
+  Edit3,
+  UserCheck
+} from 'lucide-react';
 
 interface FriendlyMatchModalProps {
   isOpen: boolean;
@@ -22,16 +33,23 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
   onRequireAdmin
 }) => {
   const existingTeams = StorageService.getTeams();
+  const allPlayers = StorageService.getPlayers();
 
   const [team1Id, setTeam1Id] = useState<string>(existingTeams[0]?.id || '');
   const [team2Id, setTeam2Id] = useState<string>(
     existingTeams[1]?.id || existingTeams[0]?.id || ''
   );
   const [overs, setOvers] = useState<number>(10);
+  const [playersPerTeam, setPlayersPerTeam] = useState<number>(6);
   const [venue, setVenue] = useState<string>('Sky Arena Rooftop Court');
   const [scheduledTime, setScheduledTime] = useState<string>(
     new Date().toISOString().replace('T', ' ').slice(0, 16)
   );
+
+  // Custom player names editor state
+  const [t1PlayerNames, setT1PlayerNames] = useState<string[]>([]);
+  const [t2PlayerNames, setT2PlayerNames] = useState<string[]>([]);
+  const [showSquadCustomizer, setShowSquadCustomizer] = useState<boolean>(false);
 
   // Quick custom team creation toggles
   const [isCreatingNewTeam, setIsCreatingNewTeam] = useState<boolean>(false);
@@ -40,10 +58,34 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
   const [newTeamEmoji, setNewTeamEmoji] = useState<string>('🏏');
   const [newTeamColor, setNewTeamColor] = useState<string>('#06b6d4');
 
-  if (!isOpen) return null;
-
   const t1 = existingTeams.find((t) => t.id === team1Id);
   const t2 = existingTeams.find((t) => t.id === team2Id);
+
+  // Synchronize player names when team or playersPerTeam changes
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const loadSquadNames = (team?: Team): string[] => {
+      const names: string[] = [];
+      const currentIds = team?.playerIds || [];
+      const teamLabel = team?.name || 'Player';
+
+      for (let i = 0; i < playersPerTeam; i++) {
+        if (i < currentIds.length) {
+          const p = allPlayers.find((player) => player.id === currentIds[i]);
+          names.push(p?.name || `${teamLabel} ${i + 1}`);
+        } else {
+          names.push(`${teamLabel} Player ${i + 1}`);
+        }
+      }
+      return names;
+    };
+
+    setT1PlayerNames(loadSquadNames(t1));
+    setT2PlayerNames(loadSquadNames(t2));
+  }, [team1Id, team2Id, playersPerTeam, isOpen]);
+
+  if (!isOpen) return null;
 
   const handleCreateNewTeam = (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,10 +129,62 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
       return;
     }
 
+    const cleanSquadSize = Math.max(2, Math.min(15, Number(playersPerTeam) || 6));
+
+    // Resolve or update player entities with customized names
+    const resolveSquadIds = (teamId: string, customNames: string[]): string[] => {
+      const existingTeam = StorageService.getTeamById(teamId);
+      const existingIds = existingTeam?.playerIds || [];
+      const finalSquadIds: string[] = [];
+
+      for (let i = 0; i < cleanSquadSize; i++) {
+        const nameToUse = (customNames[i] || '').trim();
+
+        if (i < existingIds.length) {
+          const existingPlayer = StorageService.getPlayerById(existingIds[i]);
+          if (existingPlayer) {
+            if (nameToUse && existingPlayer.name !== nameToUse) {
+              existingPlayer.name = nameToUse;
+              StorageService.savePlayer(existingPlayer);
+            }
+            finalSquadIds.push(existingPlayer.id);
+            continue;
+          }
+        }
+
+        // Create new player entity if squad needs expansion
+        const newP: Player = {
+          id: `p_friendly_${Date.now()}_${Math.random().toString(36).substring(2, 6)}_${i}`,
+          name: nameToUse || `${existingTeam?.name || 'Team'} Player ${i + 1}`,
+          role: i % 2 === 0 ? 'All-Rounder' : (i % 3 === 0 ? 'Bowler' : 'Batsman'),
+          battingStyle: 'Right-Hand Bat',
+          bowlingStyle: 'Right-Arm Medium',
+          jerseyNumber: i + 1,
+          currentTeamId: teamId,
+          createdAt: new Date().toISOString()
+        };
+        StorageService.savePlayer(newP);
+        finalSquadIds.push(newP.id);
+      }
+
+      if (existingTeam) {
+        existingTeam.playerIds = Array.from(new Set([...existingTeam.playerIds, ...finalSquadIds]));
+        StorageService.saveTeam(existingTeam);
+      }
+
+      return finalSquadIds;
+    };
+
+    const team1SquadIds = resolveSquadIds(team1Id, t1PlayerNames);
+    const team2SquadIds = resolveSquadIds(team2Id, t2PlayerNames);
+
     const match = StorageService.createFriendlyMatch({
       team1Id,
       team2Id,
       overs: Number(overs) || 10,
+      playersPerTeam: cleanSquadSize,
+      team1PlayerIds: team1SquadIds,
+      team2PlayerIds: team2SquadIds,
       venue: venue.trim() || 'Sky Arena Rooftop Court',
       scheduledTime: scheduledTime || new Date().toISOString().replace('T', ' ').slice(0, 16),
       autoActivate: startNow
@@ -102,17 +196,17 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
     if (startNow && onStartScoring) {
       onStartScoring(match.id);
     } else {
-      alert(`Friendly match #${match.matchNumber} (${overs} Overs) successfully created!`);
+      alert(`Friendly match #${match.matchNumber} (${cleanSquadSize} vs ${cleanSquadSize} • ${overs} Overs) successfully created!`);
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-lg p-5 sm:p-6 shadow-2xl relative my-auto">
+      <div className="bg-slate-900 border border-slate-700/80 rounded-3xl w-full max-w-xl p-5 sm:p-6 shadow-2xl relative my-auto max-h-[92vh] overflow-y-auto scrollbar-none">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -130,7 +224,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
               </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Score or schedule an independent 2-team exhibition game without tournament rules.
+              Customize squad size (2 to 12 players), overs, and teams without tournament restrictions.
             </p>
           </div>
         </div>
@@ -139,7 +233,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
         <div className="mb-5 p-3 rounded-2xl bg-cyan-950/30 border border-cyan-500/30 text-cyan-200 text-xs flex items-start space-x-2.5">
           <span className="text-base leading-none">ℹ️</span>
           <span>
-            Friendly matches are completely isolated. They will <strong>NOT</strong> alter tournament points table, Net Run Rate (NRR), or playoff qualifications.
+            Friendly matches are completely isolated. All-out and wickets will dynamically adapt to the chosen <strong>{playersPerTeam} vs {playersPerTeam}</strong> squad size.
           </span>
         </div>
 
@@ -190,7 +284,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
             <button
               type="button"
               onClick={() => setIsCreatingNewTeam(true)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center space-x-1.5 transition-colors"
+              className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer"
             >
               <PlusCircle className="w-3.5 h-3.5" />
               <span>+ Need a different team? Create custom team</span>
@@ -205,7 +299,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCreatingNewTeam(false)}
-                  className="text-xs text-slate-400 hover:text-white"
+                  className="text-xs text-slate-400 hover:text-white cursor-pointer"
                 >
                   Cancel
                 </button>
@@ -242,7 +336,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
                       key={em}
                       type="button"
                       onClick={() => setNewTeamEmoji(em)}
-                      className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-all ${
+                      className={`w-7 h-7 rounded-lg text-sm flex items-center justify-center transition-all cursor-pointer ${
                         newTeamEmoji === em ? 'bg-cyan-500/30 border border-cyan-400 scale-105' : 'bg-slate-900'
                       }`}
                     >
@@ -252,7 +346,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
                 </div>
                 <button
                   type="submit"
-                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center space-x-1 transition-all"
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center space-x-1 transition-all cursor-pointer"
                 >
                   <Check className="w-3.5 h-3.5" />
                   <span>Save Team</span>
@@ -262,10 +356,112 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
           )}
         </div>
 
+        {/* Players per Team (Squad Size: 2 to 12 players) */}
+        <div className="mb-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+              <UserCheck className="w-4 h-4 text-cyan-400" />
+              <span>Players per Team (দলপ্রতি খেলোয়াড়: ২ থেকে ১২ জন)</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setShowSquadCustomizer(!showSquadCustomizer)}
+              className="text-[11px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center space-x-1 transition-colors cursor-pointer"
+            >
+              <Edit3 className="w-3 h-3" />
+              <span>{showSquadCustomizer ? 'Hide Player Names' : 'Edit Player Names'}</span>
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            {[2, 3, 4, 5, 6, 8, 10, 11, 12].map((count) => (
+              <button
+                key={count}
+                type="button"
+                onClick={() => setPlayersPerTeam(count)}
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  playersPerTeam === count
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                }`}
+              >
+                {count}v{count} {count === 6 ? '★ Standard' : count === 11 ? 'XI' : count === 2 ? 'Duo' : ''}
+              </button>
+            ))}
+            <div className="flex items-center space-x-1.5 bg-slate-900 px-3 py-1 rounded-xl border border-slate-800">
+              <span className="text-[11px] text-slate-400">Custom:</span>
+              <input
+                type="number"
+                min={2}
+                max={15}
+                value={playersPerTeam}
+                onChange={(e) => setPlayersPerTeam(Math.max(2, Math.min(15, parseInt(e.target.value) || 6)))}
+                className="w-12 bg-slate-950 border border-slate-700 rounded-lg px-1.5 py-0.5 text-xs text-white text-center font-bold focus:outline-none focus:border-cyan-500"
+              />
+              <span className="text-[11px] text-slate-400">players</span>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-500">
+            অল-আউট (All Out) এবং উইকেট মার্জিন ম্যাচটিতে <strong>{playersPerTeam}</strong> জন ব্যাটসম্যানের ওপর ভিত্তি করে নির্ধারিত হবে।
+          </p>
+
+          {/* Expandable Squad Customizer (Edit Player Names) */}
+          {showSquadCustomizer && (
+            <div className="mt-4 pt-3 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Team 1 Squad */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold text-cyan-300 mb-1 flex items-center justify-between">
+                  <span>{t1?.name || 'Team 1'} ({playersPerTeam} Players)</span>
+                </div>
+                {Array.from({ length: playersPerTeam }).map((_, idx) => (
+                  <div key={idx} className="flex items-center space-x-2">
+                    <span className="text-[10px] text-slate-500 w-4 text-right">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={t1PlayerNames[idx] || ''}
+                      onChange={(e) => {
+                        const copy = [...t1PlayerNames];
+                        copy[idx] = e.target.value;
+                        setT1PlayerNames(copy);
+                      }}
+                      placeholder={`Player ${idx + 1}`}
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Team 2 Squad */}
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold text-amber-300 mb-1 flex items-center justify-between">
+                  <span>{t2?.name || 'Team 2'} ({playersPerTeam} Players)</span>
+                </div>
+                {Array.from({ length: playersPerTeam }).map((_, idx) => (
+                  <div key={idx} className="flex items-center space-x-2">
+                    <span className="text-[10px] text-slate-500 w-4 text-right">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={t2PlayerNames[idx] || ''}
+                      onChange={(e) => {
+                        const copy = [...t2PlayerNames];
+                        copy[idx] = e.target.value;
+                        setT2PlayerNames(copy);
+                      }}
+                      placeholder={`Player ${idx + 1}`}
+                      className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* Overs Format Selection */}
         <div className="mb-4">
           <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
-            Overs per Innings
+            Overs per Innings (ইনিংস প্রতি ওভার)
           </label>
           <div className="flex flex-wrap items-center gap-2">
             {[5, 6, 8, 10, 12, 15, 20].map((ov) => (
@@ -273,7 +469,7 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
                 key={ov}
                 type="button"
                 onClick={() => setOvers(ov)}
-                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all ${
+                className={`py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                   overs === ov
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -333,16 +529,16 @@ export const FriendlyMatchModal: React.FC<FriendlyMatchModalProps> = ({
           <button
             type="button"
             onClick={() => handleCreateMatch(true)}
-            className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-lg shadow-cyan-600/30 active:scale-98 transition-all"
+            className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-teal-600 to-emerald-600 hover:from-cyan-500 hover:to-emerald-500 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-lg shadow-cyan-600/30 active:scale-98 transition-all cursor-pointer"
           >
             <Zap className="w-4 h-4 text-amber-300" />
-            <span>⚡ Start Scoring Now (Toss)</span>
+            <span>⚡ Start Scoring ({playersPerTeam}v{playersPerTeam})</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleCreateMatch(false)}
-            className="w-full sm:w-auto py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition-colors"
+            className="w-full sm:w-auto py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center justify-center space-x-1.5 transition-colors cursor-pointer"
           >
             <Calendar className="w-4 h-4 text-cyan-400" />
             <span>Add to Fixtures</span>

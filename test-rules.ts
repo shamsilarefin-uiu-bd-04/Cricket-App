@@ -1373,13 +1373,38 @@ const friendlyMatch = StorageService.createFriendlyMatch({
   team1Id: 't1',
   team2Id: 't2',
   overs: 8,
+  playersPerTeam: 4,
   venue: 'Sky Rooftop East Ground',
   autoActivate: true
 });
 assert(friendlyMatch.stage === 'Friendly', 'Friendly match created with stage "Friendly"');
 assert(friendlyMatch.overs === 8, 'Friendly match format has 8 overs');
+assert(friendlyMatch.playersPerTeam === 4, 'Friendly match format has 4 players per team');
+assert(friendlyMatch.team1PlayerIds?.length === 4, 'Team 1 playing squad has exactly 4 players');
+assert(friendlyMatch.team2PlayerIds?.length === 4, 'Team 2 playing squad has exactly 4 players');
 assert(friendlyMatch.tournamentId === 'friendly', 'Friendly match tournamentId is "friendly"');
 assert(StorageService.getActiveMatchId() === friendlyMatch.id, 'Friendly match auto-activated in LiveScorer');
+
+// Test 2v2 Duo friendly match
+const duoMatch = StorageService.createFriendlyMatch({
+  team1Id: 't1',
+  team2Id: 't2',
+  overs: 4,
+  playersPerTeam: 2
+});
+assert(duoMatch.playersPerTeam === 2, '2v2 Duo friendly match created with 2 players per team');
+assert(duoMatch.team1PlayerIds?.length === 2, 'Team 1 has 2 players');
+
+// Test 11v11 Full Squad friendly match (auto-expansion)
+const fullSquadMatch = StorageService.createFriendlyMatch({
+  team1Id: 't1',
+  team2Id: 't2',
+  overs: 20,
+  playersPerTeam: 11
+});
+assert(fullSquadMatch.playersPerTeam === 11, '11v11 Full Squad friendly match created with 11 players per team');
+assert(fullSquadMatch.team1PlayerIds?.length === 11, 'Team 1 squad auto-expanded to 11 players');
+assert(fullSquadMatch.team2PlayerIds?.length === 11, 'Team 2 squad auto-expanded to 11 players');
 
 // Verify that friendly matches NEVER pollute tournament standings
 const tourneyStandingsBefore = StorageService.calculateStandings(top3Tourney.id);

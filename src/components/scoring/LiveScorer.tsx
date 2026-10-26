@@ -208,6 +208,22 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
     ? teams.find((t) => t.id === currentInnings.bowlingTeamId) || team2
     : team2;
 
+  // Playing squads for this specific match (customizable 2 to 12+ players)
+  const matchSquadSize = activeMatch.playersPerTeam || 6;
+  const team1SquadPlayerIds: string[] =
+    activeMatch.team1PlayerIds && activeMatch.team1PlayerIds.length > 0
+      ? activeMatch.team1PlayerIds
+      : team1.playerIds.slice(0, matchSquadSize);
+  const team2SquadPlayerIds: string[] =
+    activeMatch.team2PlayerIds && activeMatch.team2PlayerIds.length > 0
+      ? activeMatch.team2PlayerIds
+      : team2.playerIds.slice(0, matchSquadSize);
+
+  const battingSquadPlayerIds =
+    battingTeam.id === team1.id ? team1SquadPlayerIds : team2SquadPlayerIds;
+  const bowlingSquadPlayerIds =
+    bowlingTeam.id === team1.id ? team1SquadPlayerIds : team2SquadPlayerIds;
+
   // Active player entities
   const activeBatsman = currentInnings?.currentBatsmanId
     ? StorageService.getPlayerById(currentInnings.currentBatsmanId)
@@ -362,7 +378,7 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
       if (result.requiresNewBatsman && !result.isInningsOver) {
         const avail = ScoringEngine.getAvailableBatsmen(
           result.updatedInnings,
-          battingTeam?.playerIds || [],
+          battingSquadPlayerIds,
           { totalOvers: matchOvers }
         );
         if (avail.unbattedPlayerIds.length === 0 && !avail.canReEnterRetired) {
@@ -407,7 +423,7 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
 
         if (inn2Runs >= target) {
           winnerId = result.updatedInnings.teamId;
-          const maxSquadWickets = battingTeam.playerIds.length;
+          const maxSquadWickets = battingSquadPlayerIds.length;
           const remainingWickets = maxSquadWickets - result.updatedInnings.wickets;
           margin = `Won by ${Math.max(1, remainingWickets)} wickets`;
         } else if (inn2Runs < inn1Runs) {
@@ -648,8 +664,12 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
             M{activeMatch.matchNumber}
           </div>
           <div>
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex flex-wrap items-center gap-2">
               <span>{activeMatch.stage} Match • {activeMatch.venue}</span>
+              <span className="text-[10px] bg-cyan-500/10 text-cyan-300 border border-cyan-500/30 px-2 py-0.5 rounded-full font-extrabold flex items-center space-x-1">
+                <Users className="w-2.5 h-2.5" />
+                <span>{matchSquadSize} vs {matchSquadSize} Players</span>
+              </span>
               <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded-full font-extrabold">
                 ⚡ {matchOvers} Overs Format
               </span>
@@ -1366,7 +1386,7 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
           <SelectBatsmanModal
             isOpen={isBatsmanModalOpen}
             innings={currentInnings}
-            battingTeamPlayerIds={battingTeam.playerIds}
+            battingTeamPlayerIds={battingSquadPlayerIds}
             totalOvers={matchOvers}
             maxOversPerBatsman={maxBatsmanOvers}
             onSelectBatsman={handleSelectBatsman}
@@ -1376,7 +1396,7 @@ export const LiveScorer: React.FC<LiveScorerProps> = ({
           <SelectBowlerModal
             isOpen={isBowlerModalOpen}
             innings={currentInnings}
-            bowlingTeamPlayerIds={bowlingTeam.playerIds}
+            bowlingTeamPlayerIds={bowlingSquadPlayerIds}
             currentBowlerId={currentInnings.currentBowlerId}
             totalOvers={matchOvers}
             maxOversPerBowler={maxBowlerOvers}

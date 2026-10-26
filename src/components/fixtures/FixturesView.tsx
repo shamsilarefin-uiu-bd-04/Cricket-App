@@ -70,6 +70,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
   const [venue, setVenue] = useState('Sky Arena Roof Court A');
   const [stage, setStage] = useState<'League' | 'Semi-Final' | 'Final' | 'Friendly'>('League');
   const [overs, setOvers] = useState<number>(10);
+  const [playersPerTeam, setPlayersPerTeam] = useState<number>(6);
 
   const filteredMatches = matches.filter((m) => {
     const isFriendly = m.stage === 'Friendly' || m.tournamentId === 'friendly';
@@ -112,6 +113,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
     setVenue('Sky Arena Roof Court A');
     setStage('League');
     setOvers(tournament.oversPerInnings || 10);
+    setPlayersPerTeam(tournament.playersPerTeam || 6);
     setIsModalOpen(true);
   };
 
@@ -127,6 +129,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
     setVenue(match.venue);
     setStage(match.stage);
     setOvers(match.overs || tournament.oversPerInnings || 10);
+    setPlayersPerTeam(match.playersPerTeam || tournament.playersPerTeam || 6);
     setIsModalOpen(true);
   };
 
@@ -141,6 +144,8 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
       return;
     }
 
+    const cleanSquadSize = Math.max(2, Math.min(15, Number(playersPerTeam) || 6));
+
     if (editingMatch) {
       const updated: Match = {
         ...editingMatch,
@@ -150,8 +155,9 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
         venue,
         stage,
         overs: Number(overs) || 10,
+        playersPerTeam: cleanSquadSize,
         tournamentId: stage === 'Friendly' ? 'friendly' : (editingMatch.tournamentId || tournament.id),
-        notes: stage === 'Friendly' ? `Friendly Match (${overs} Overs)` : editingMatch.notes
+        notes: stage === 'Friendly' ? `Friendly Match (${cleanSquadSize}v${cleanSquadSize} • ${overs} Overs)` : editingMatch.notes
       };
       StorageService.saveMatch(updated);
     } else {
@@ -167,7 +173,8 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
         scheduledTime,
         status: 'scheduled',
         overs: Number(overs) || 10,
-        notes: stage === 'Friendly' ? `Friendly Match (${overs} Overs)` : `${stage} Match (${overs} Overs)`
+        playersPerTeam: cleanSquadSize,
+        notes: stage === 'Friendly' ? `Friendly Match (${cleanSquadSize}v${cleanSquadSize} • ${overs} Overs)` : `${stage} Match (${cleanSquadSize}v${cleanSquadSize} • ${overs} Overs)`
       };
       StorageService.saveMatch(newMatch);
     }
@@ -512,7 +519,7 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
                       ) : isFriendly ? (
                         <span className="text-cyan-300 font-bold bg-cyan-500/20 px-2 py-0.5 rounded-full border border-cyan-500/40 flex items-center space-x-1">
                           <Users className="w-3 h-3 text-cyan-300" />
-                          <span>FRIENDLY MATCH</span>
+                          <span>FRIENDLY ({m.playersPerTeam || 6}v{m.playersPerTeam || 6})</span>
                         </span>
                       ) : (
                         <span className="text-emerald-400 font-semibold">{m.stage || 'Round Robin'}</span>
@@ -735,6 +742,36 @@ export const FixturesView: React.FC<FixturesViewProps> = ({
                     value={overs}
                     onChange={(e) => setOvers(Math.max(1, parseInt(e.target.value) || 10))}
                     className="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                  Players per Team (দলপ্রতি খেলোয়াড়: ২ থেকে ১২ জন)
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {[2, 3, 4, 5, 6, 8, 10, 11, 12].map((cnt) => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() => setPlayersPerTeam(cnt)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        playersPerTeam === cnt
+                          ? 'bg-cyan-500 text-slate-950 shadow-sm'
+                          : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      }`}
+                    >
+                      {cnt}v{cnt}
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={2}
+                    max={15}
+                    value={playersPerTeam}
+                    onChange={(e) => setPlayersPerTeam(Math.max(2, Math.min(15, parseInt(e.target.value) || 6)))}
+                    className="w-16 bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white text-center font-bold focus:outline-none focus:border-cyan-500"
                   />
                 </div>
               </div>

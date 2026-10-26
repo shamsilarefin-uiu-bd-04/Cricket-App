@@ -1025,10 +1025,60 @@ export const StorageService = {
     }
   },
 
+  // Ensure a team has at least requiredCount players (2 to 12+) by drafting or auto-generating
+  ensureSquadCapacity(teamId: string, requiredCount: number, currentIds?: string[]): string[] {
+    const teams = this.getTeams();
+    const team = teams.find((t) => t.id === teamId);
+    const allPlayers = this.getPlayers();
+    let squadIds = currentIds && currentIds.length > 0 ? [...currentIds] : (team ? [...team.playerIds] : []);
+
+    // Filter to valid players
+    squadIds = squadIds.filter((id) => allPlayers.some((p) => p.id === id));
+
+    if (squadIds.length < requiredCount) {
+      const needed = requiredCount - squadIds.length;
+      const teamName = team?.name || 'Team';
+      const freeAgents = this.getFreeAgents();
+
+      for (let i = 0; i < needed; i++) {
+        if (i < freeAgents.length) {
+          const fa = freeAgents[i];
+          squadIds.push(fa.id);
+          fa.currentTeamId = teamId;
+          this.savePlayer(fa);
+        } else {
+          const num = squadIds.length + 1;
+          const newPlayer: Player = {
+            id: `p_${Date.now()}_${Math.random().toString(36).substring(2, 6)}_${i}`,
+            name: `${teamName} Player ${num}`,
+            role: num % 2 === 0 ? 'All-Rounder' : (num % 3 === 0 ? 'Bowler' : 'Batsman'),
+            battingStyle: 'Right-Hand Bat',
+            bowlingStyle: 'Right-Arm Medium',
+            jerseyNumber: num,
+            currentTeamId: teamId,
+            createdAt: new Date().toISOString()
+          };
+          this.savePlayer(newPlayer);
+          squadIds.push(newPlayer.id);
+        }
+      }
+
+      if (team) {
+        team.playerIds = Array.from(new Set([...team.playerIds, ...squadIds]));
+        this.saveTeam(team);
+      }
+    }
+
+    return squadIds.slice(0, requiredCount);
+  },
+
   createFriendlyMatch(options: {
     team1Id: string;
     team2Id: string;
     overs?: number;
+    playersPerTeam?: number;
+    team1PlayerIds?: string[];
+    team2PlayerIds?: string[];
     venue?: string;
     scheduledTime?: string;
     autoActivate?: boolean;
@@ -1037,6 +1087,16 @@ export const StorageService = {
     const matches = this.getMatches();
     const highestNum = matches.reduce((max, m) => Math.max(max, m.matchNumber || 0), 0);
     const overs = options.overs && options.overs > 0 ? options.overs : 10;
+    const playersPerTeam = Math.max(2, Math.min(15, options.playersPerTeam || 6));
+
+    const t1Squad = options.team1PlayerIds && options.team1PlayerIds.length >= playersPerTeam
+      ? options.team1PlayerIds.slice(0, playersPerTeam)
+      : this.ensureSquadCapacity(options.team1Id, playersPerTeam, options.team1PlayerIds);
+
+    const t2Squad = options.team2PlayerIds && options.team2PlayerIds.length >= playersPerTeam
+      ? options.team2PlayerIds.slice(0, playersPerTeam)
+      : this.ensureSquadCapacity(options.team2Id, playersPerTeam, options.team2PlayerIds);
+
     const match: Match = {
       id: `friendly_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       tournamentId: 'friendly',
@@ -1048,7 +1108,10 @@ export const StorageService = {
       scheduledTime: options.scheduledTime || new Date().toISOString().replace('T', ' ').slice(0, 16),
       status: 'scheduled',
       overs,
-      notes: `Friendly Match (${overs} Overs)`
+      playersPerTeam,
+      team1PlayerIds: t1Squad,
+      team2PlayerIds: t2Squad,
+      notes: `Friendly Match (${playersPerTeam} vs ${playersPerTeam} • ${overs} Overs)`
     };
 
     matches.push(match);
